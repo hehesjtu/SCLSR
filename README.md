@@ -1,10 +1,10 @@
-# SCLSR: Self-Calibrating Learning for Remote Sensing Image Super-Resolution
+# SCLSR: Remote Sensing Image Super Resolution Based on Self Calibration Learning
 
-This is the source code of the paper named "Self-Calibrating Learning for Remote Sensing Image Super-Resolution". This paper has been submitted to *IEEE Transactions on Geoscience and Remote Sensing*.
+This is the source code of the paper named "Remote Sensing Image Super Resolution Based on Self Calibration Learning". This paper has been submitted to *IEEE Transactions on Geoscience and Remote Sensing*.
 
 ## Introduction
 
-This repository contains the implementation of **SCLSR** (Self-Calibrating Learning for Remote Sensing Image Super-Resolution), a remote-sensing image super-resolution method designed to recover spatial structures and high-frequency details from low-resolution imagery. It includes the SCLSR network definition and a PyQt5 desktop demo for image inference, visual comparison, PSNR/SSIM evaluation, residual visualization, and local-detail inspection.
+This repository contains the implementation of **SCLSR** (Remote Sensing Image Super Resolution Based on Self Calibration Learning), a remote-sensing image super-resolution method designed to recover spatial structures and high-frequency details from low-resolution imagery. It includes the SCLSR network definition and a PyQt5 desktop demo for image inference, visual comparison, PSNR/SSIM evaluation, residual visualization, and local-detail inspection.
 
 ## Features
 
@@ -74,6 +74,10 @@ After the application opens:
 ## Citation
 
 The manuscript is currently under review at *IEEE Transactions on Geoscience and Remote Sensing*. Citation information will be updated after the paper becomes publicly available.
+
+## Contact
+
+If you have any questions, please contact us at [jianghe@cumt.edu.cn](mailto:jianghe@cumt.edu.cn).
 
 ## License
 
