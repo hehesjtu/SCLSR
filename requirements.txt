@@ -1,0 +1,9 @@
+numpy
+opencv-python
+Pillow
+PyQt5
+thop
+timm
+torch
+torch-dct
+

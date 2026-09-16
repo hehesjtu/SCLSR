@@ -1,0 +1,28 @@
+# Python caches and build outputs
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments and editor settings
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Model checkpoints and generated results
+*.pth
+*.pt
+checkpoints/
+results/
+outputs/
+
+# Local datasets and images
+data/
+datasets/
+imgs/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
