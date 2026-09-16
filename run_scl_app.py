@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 from SCL import WaveFormerSR
 
-# ---------- 固定随机性 ----------
+# ---------- Reproducibility ----------
 def _fix_determinism(seed: int = 1234):
     random.seed(seed); np.random.seed(seed)
     torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
@@ -22,7 +22,7 @@ def _fix_determinism(seed: int = 1234):
     except Exception: pass
 _fix_determinism(1234)
 
-# ---------- 权重路径与倍率 ----------
+# ---------- Checkpoint path and upscaling factor ----------
 def _find_weight():
     candidates = [
         os.path.join(os.getcwd(), 'SCL_x4.pth'), 'SCL_x4.pth',
@@ -35,7 +35,7 @@ def _infer_scale_from_name(path: str) -> int:
     m = re.search(r'_x([234])\\.pt$', os.path.basename(path).lower())
     return int(m.group(1)) if m else 4
 
-# ---------- 权重映射 ----------
+# ---------- Checkpoint weight mapping ----------
 def _remap_weight_norm_ckpt_to_model(ckpt, model_state):
     target = set(model_state.keys()); new = collections.OrderedDict(); used=set()
     bases = {}
@@ -57,7 +57,7 @@ def _remap_weight_norm_ckpt_to_model(ckpt, model_state):
         if k not in new: new[k] = v
     return new
 
-# ---------- 模型加载 ----------
+# ---------- Model loading ----------
 def _load_model(device='cuda'):
     device = 'cuda' if (device=='cuda' and torch.cuda.is_available()) else 'cpu'
     wpath = _find_weight(); scale = _infer_scale_from_name(wpath)
@@ -73,7 +73,7 @@ def _load_model(device='cuda'):
 
 _MODEL, _DEVICE, _SCALE = _load_model('cuda')
 
-# ---------- 工具（0~255 域） ----------
+# ---------- Utilities (0-255 range) ----------
 def _to_tensor_nchw255(rgb_u8: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(rgb_u8.astype(np.float32)).permute(2,0,1).unsqueeze(0)
 
@@ -94,7 +94,7 @@ def _bicubic_down(rgb_u8: np.ndarray, S:int):
     lr = cv2.resize(rgb_u8, (dw,dh), interpolation=cv2.INTER_CUBIC)
     return lr, (w,h)
 
-# ---------- 推理 ----------
+# ---------- Inference ----------
 @torch.no_grad()
 def scl_enhance(img_rgb: np.ndarray, progress=None, return_debug=False):
     S = int(_SCALE)
@@ -111,7 +111,7 @@ def scl_enhance(img_rgb: np.ndarray, progress=None, return_debug=False):
         sr_from_input = cv2.resize(sr_from_input, (nn_up.shape[1], nn_up.shape[0]), interpolation=cv2.INTER_AREA)
     if progress: progress.setValue(55)
 
-    # (3) 高频层：增强 3 倍的 |nearest↑S - model↑S|
+    # High-frequency residual: amplify |nearest-neighbor xS - model xS| by 10.
     highfreq = cv2.absdiff(nn_up, sr_from_input)
     highfreq = np.clip(highfreq * 10, 0, 255).astype(np.uint8)
     if progress: progress.setValue(75)

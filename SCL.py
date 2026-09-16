@@ -25,9 +25,9 @@ import torch_dct
 #         x = self.drop(x)
 #         return x
 
-# class MSF(nn.Module):
+# class HSF(nn.Module):
 #     def __init__(self, dim, bias):
-#         super(MSF, self).__init__()
+#         super(HSF, self).__init__()
 #
 #         # hidden_features = int(dim * ffn_expansion_factor)
 #         hidden_features = dim
@@ -75,20 +75,20 @@ import torch_dct
 import torch
 import torch.nn as nn
 
-class MSF(nn.Module):
+class HSF(nn.Module):
     def __init__(self, dim, bias):
-        super(MSF, self).__init__()
+        super(HSF, self).__init__()
 
-        # dim 是 4 的倍数
+        # The feature dimension must be divisible by four.
         hidden_features = dim
 
         self.project_in = nn.Conv2d(dim, hidden_features, kernel_size=1, bias=bias)
 
-        # --- 第一层：特征提取 ---
+        # --- First stage: feature extraction ---
         self.dwconv3x3 = nn.Conv2d(hidden_features, hidden_features, kernel_size=3, stride=1, padding=1, groups=hidden_features, bias=bias)
         self.dwconv5x5 = nn.Conv2d(hidden_features, hidden_features, kernel_size=5, stride=1, padding=2, groups=hidden_features, bias=bias)
         self.dwconv7x7 = nn.Conv2d(hidden_features, hidden_features, kernel_size=7, stride=1, padding=3, groups=hidden_features, bias=bias)
-        # 第4分支：最大池化（不改变通道数）
+        # Fourth branch: max pooling without changing the channel count.
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1, padding=1)
 
         self.relu3 = nn.ReLU()
@@ -96,8 +96,8 @@ class MSF(nn.Module):
         self.relu7 = nn.ReLU()
         self.relu_pool = nn.ReLU()
 
-        # --- 第二层：深度演化 ---
-        # 注意：这里每一路的输入通道数变为 hidden_features (通过 4 个 chunk 拼接得到)
+        # --- Second stage: depthwise refinement ---
+        # Each branch has hidden_features channels after recombining four chunks.
         self.dwconv3x3_1 = nn.Conv2d(hidden_features, hidden_features, kernel_size=3, stride=1, padding=1, groups=hidden_features, bias=bias)
         self.dwconv5x5_1 = nn.Conv2d(hidden_features, hidden_features, kernel_size=5, stride=1, padding=2, groups=hidden_features, bias=bias)
         self.dwconv7x7_1 = nn.Conv2d(hidden_features, hidden_features, kernel_size=7, stride=1, padding=3, groups=hidden_features, bias=bias)
@@ -108,31 +108,31 @@ class MSF(nn.Module):
         self.relu7_1 = nn.ReLU()
         self.relu_pool_1 = nn.ReLU()
 
-        # 最后拼接 4 个分支，总通道数为 hidden_features * 4
+        # Concatenating the four branches produces hidden_features * 4 channels.
         self.project_out = nn.Conv2d(hidden_features * 4, dim, kernel_size=1, bias=bias)
 
     def forward(self, x):
         x = self.project_in(x)
 
-        # 1. 每一路都经过变换并切分为 4 份
+        # 1. Transform each path and split its output into four chunks.
         x1_3, x2_3, x3_3, x4_3 = self.relu3(self.dwconv3x3(x)).chunk(4, dim=1)
         x1_5, x2_5, x3_5, x4_5 = self.relu5(self.dwconv5x5(x)).chunk(4, dim=1)
         x1_7, x2_7, x3_7, x4_7 = self.relu7(self.dwconv7x7(x)).chunk(4, dim=1)
         x1_p, x2_p, x3_p, x4_p = self.relu_pool(self.maxpool(x)).chunk(4, dim=1)
 
-        # 2. 跨尺度特征重组 (Shuffle/Exchange)
+        # 2. Recombine features across scales (shuffle/exchange).
         x1 = torch.cat([x1_3, x1_5, x1_7, x1_p], dim=1)
         x2 = torch.cat([x2_3, x2_5, x2_7, x2_p], dim=1)
         x3 = torch.cat([x3_3, x3_5, x3_7, x3_p], dim=1)
         x4 = torch.cat([x4_3, x4_5, x4_7, x4_p], dim=1)
 
-        # 3. 各分支独立卷积
+        # 3. Apply a separate convolution to each branch.
         x1 = self.relu3_1(self.dwconv3x3_1(x1))
         x2 = self.relu5_1(self.dwconv5x5_1(x2))
         x3 = self.relu7_1(self.dwconv7x7_1(x3))
         x4 = self.relu_pool_1(self.dwconv_pool_1(x4))
 
-        # 4. 最终拼接
+        # 4. Concatenate the branch outputs.
         x = torch.cat([x1, x2, x3, x4], dim=1)
         x = self.project_out(x)
 
@@ -196,7 +196,7 @@ class Wave2D(nn.Module):
         self.out_norm = nn.LayerNorm(hidden_dim)
         self.out_linear = nn.Linear(hidden_dim, hidden_dim, bias=True)
         self.infer_mode = infer_mode
-        # 用于将频率嵌入转换为时间步长 t 的小型网络
+        # Small network that maps frequency embeddings to time step t.
         self.to_k = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim, bias=True),
             nn.ReLU(),
@@ -258,18 +258,18 @@ class Wave2D(nn.Module):
             setattr(self, "__WEIGHT_EXP__", weight_exp)
 
         def dct2d(x):
-            # 使用导入的 torch_dct 库
+            # Use the imported torch_dct library.
             return torch_dct.dct_2d(x, norm='ortho')
 
         def idct2d(x):
-            # 使用导入的 torch_dct 库
+            # Use the imported torch_dct library.
             return torch_dct.idct_2d(x, norm='ortho')
 
         x_u0 = dct2d(x)
         x_v0 = dct2d(x)
 
-        # 时间步长计算：根据频率嵌入动态调整每个 Token 的传播时间 t
-        # freq_embed: (H, W, C) -> (B, H, W, C)，意味着每个频率分量有自己的传播时间
+        # Dynamically derive each token's propagation time t from frequency embeddings.
+        # freq_embed: (H, W, C) -> (B, H, W, C); each frequency component has its own time.
         if freq_embed is not None:
             t = self.to_k(freq_embed.unsqueeze(0).expand(B, -1, -1, -1).contiguous())
         else:
@@ -424,17 +424,17 @@ class SwinTransformerBlock(nn.Module):
             self.shift_size = 0
             self.window_size = min(self.input_resolution)
 
-        # --- 第一阶段：并行双分支 (Wave2D & Att) ---
+        # --- First stage: parallel Wave2D and attention branches ---
         self.norm1 = norm_layer(dim)
         self.attn = Wave2D(res=14, dim=dim, hidden_dim=dim, freq_embed=freq_embed, infer_mode=False)
         self.han = Att(dim, dim)
 
-        # 融合分支的 1x1 卷积（将 concat 的 2C 降回 C）
+        # The 1x1 fusion convolution reduces concatenated 2C channels to C.
         self.fusion = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=False)
 
-        # --- 第二阶段：多尺度融合 (MSF) ---
+        # --- Second stage: HSF fusion ---
         self.norm2 = norm_layer(dim)
-        self.mlp = MSF(dim=dim, bias=False)  # 您之前定义的 4 分支 MSF
+        self.mlp = HSF(dim=dim, bias=False)  # Four-branch HSF module.
 
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.act = nn.GELU()
@@ -444,18 +444,17 @@ class SwinTransformerBlock(nn.Module):
         B, L, C = x.shape
         shortcut = x
 
-        # -------- 并行阶段：归一化与准备 --------
+        # -------- Parallel stage: normalization and preparation --------
         x_norm = self.norm1(x)
         x_img = x_norm.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()  # (B, C, H, W)
 
-        # 分支 1: Wave2D (基于窗口)
+        # Branch 1: window-based Wave2D processing.
         if self.shift_size > 0:
             shifted_x = torch.roll(x_img, shifts=(-self.shift_size, -self.shift_size), dims=(2, 3))
         else:
             shifted_x = x_img
 
-        # 窗口切分处理
-        # 注意：此处需根据你的 window_partition 输入维度调整，假设其处理 (B, H, W, C)
+        # Partition windows after converting the tensor to (B, H, W, C).
         x_windows = window_partition(shifted_x.permute(0, 2, 3, 1), self.window_size)
         x_windows = x_windows.permute(0, 3, 1, 2).contiguous()
 
@@ -470,26 +469,26 @@ class SwinTransformerBlock(nn.Module):
             out_w2d = shifted_x
         out_w2d = out_w2d.permute(0, 3, 1, 2).contiguous()  # (B, C, H, W)
 
-        # 分支 2: Att
+        # Branch 2: attention.
         out_att = self.han(x_img)  # (B, C, H, W)
 
-        # -------- 融合阶段 --------
+        # -------- Fusion stage --------
         combined = torch.cat([out_w2d, out_att], dim=1)
         x_fused = self.fusion(combined)
 
-        # 第一次残差连接
+        # First residual connection.
         x = shortcut + self.drop_path(x_fused.permute(0, 2, 3, 1).reshape(B, L, C))
 
-        # -------- MSF 阶段 (类似于 FFN) --------
-        res_msf = x
+        # -------- HSF stage (analogous to an FFN) --------
+        res_hsf = x
         x = self.norm2(x)
         x = x.view(B, H, W, C).permute(0, 3, 1, 2).contiguous()
 
-        x = self.mlp(x)  # 4 分支多尺度融合
+        x = self.mlp(x)  # Four-branch HSF fusion.
         x = self.act(x)
 
-        # 第二次残差连接
-        x = res_msf + self.drop_path(x.permute(0, 2, 3, 1).reshape(B, L, C))
+        # Second residual connection.
+        x = res_hsf + self.drop_path(x.permute(0, 2, 3, 1).reshape(B, L, C))
 
         return x
 

@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QImage, QFont, QPainter, QPen
 from PyQt5.QtCore import Qt, QSize, QRect, pyqtSignal
 
-# ---------- 基础工具 ----------
+# ---------- Basic utilities ----------
 def arr_to_qpixmap_letterbox(arr: np.ndarray, target_w: int, target_h: int) -> QPixmap:
     if arr is None: return QPixmap()
     if arr.ndim == 2: arr = np.stack([arr]*3, axis=-1)
@@ -64,7 +64,7 @@ def draw_placeholder(text=''):
     draw.text(((w-text_w)//2, (h-text_h)//2), text, fill=(0,0,0), font=font)
     return np.array(img)
 
-# ---------- 指标（Y通道） ----------
+# ---------- Metrics (luminance channel) ----------
 def _to_y_255(rgb_u8: np.ndarray) -> np.ndarray:
     r = rgb_u8[...,0].astype(np.float32); g = rgb_u8[...,1].astype(np.float32); b = rgb_u8[...,2].astype(np.float32)
     return 0.257*r + 0.504*g + 0.098*b + 16.0
@@ -92,7 +92,7 @@ def ssim_imgA_imgB(imgA_rgb: np.ndarray, imgB_rgb: np.ndarray, K1=0.01, K2=0.03,
     ssim_map = ((2*mu12 + C1)*(2*sigma12 + C2)) / ((mu1_sq + mu2_sq + C1)*(sigma1_sq + sigma2_sq + C2) + 1e-12)
     return float(ssim_map.mean())
 
-# ---------- 可框选放大 Label ----------
+# ---------- Label with selectable zoom region ----------
 class ZoomableLabel(QLabel):
     roiFinished = pyqtSignal(QRect)
     def __init__(self, *a, **kw):
@@ -119,7 +119,7 @@ class ZoomableLabel(QLabel):
             self.update()
         else: super().mouseReleaseEvent(e)
 
-# ---------- 主窗口 ----------
+# ---------- Main window ----------
 class DetailEnhancementApp(QWidget):
     def __init__(self, enhance_fn):
         super().__init__()
@@ -127,14 +127,14 @@ class DetailEnhancementApp(QWidget):
         self.setWindowTitle("基于自校正学习的遥感图像超分辨重建软件")
         self.resize(1280, 780)
 
-        # 三图缓存 & 指标参与对象
-        self.originalImage = None      # 最近邻↑S
-        self.enhancedImage = None      # 模型↑S
-        self.residualImage = None      # |最近邻↑S - 模型↑S|
+        # Three display-image caches and the images used for metrics.
+        self.originalImage = None      # Nearest-neighbor upsampled image.
+        self.enhancedImage = None      # Model-upsampled image.
+        self.residualImage = None      # |nearest-neighbor xS - model xS|.
         self._metric_input = None
         self._metric_enhanced = None
 
-        # 顶部按钮
+        # Toolbar buttons.
         self.btnLoad = QPushButton("载入图像")
         self.btnSave = QPushButton("保存超分辨率图像")
         self.btnPSNR = QPushButton("计算 PSNR")
@@ -153,7 +153,7 @@ class DetailEnhancementApp(QWidget):
         self.btnZoom.clicked.connect(self.startZoom)
         self.btnRestore.clicked.connect(self.restoreFullView)
 
-        # 三个显示窗
+        # Three image display panels.
         ph = draw_placeholder()
         self.lblOriginalImage = ZoomableLabel(alignment=Qt.AlignCenter)
         self.lblEnhancedImage = ZoomableLabel(alignment=Qt.AlignCenter)
@@ -174,13 +174,13 @@ class DetailEnhancementApp(QWidget):
         self.lblPSNR = QLabel("PSNR: "); self.lblSSIM = QLabel("SSIM: ")
         for lab in (self.lblPSNR, self.lblSSIM): lab.setFont(QFont("Microsoft YaHei", 12))
 
-        # 版权（右上角，仅保留版权，不显示倍率）
+        # Copyright notice at the top right; do not display the scale factor.
         self.lblCopyright = QLabel("Copyright@中国矿业大学智能检测和模式识别研究所",
                                    alignment=Qt.AlignRight | Qt.AlignVCenter)
         self.lblCopyright.setFont(QFont("Microsoft YaHei", 9))
         self.lblCopyright.setStyleSheet("color: gray;")
 
-        # 布局
+        # Layout.
         top = QHBoxLayout(); btns = QHBoxLayout()
         for w in (self.btnLoad, self.btnSave, self.btnPSNR, self.btnSSIM, self.btnResidual, self.btnZoom, self.btnRestore):
             btns.addWidget(w)
@@ -198,17 +198,17 @@ class DetailEnhancementApp(QWidget):
         main.addLayout(top); main.addLayout(grid); main.addLayout(caps); main.addLayout(bottom)
         self.setLayout(main)
 
-        # 放大状态
+        # Zoom state.
         self._zoom_enabled = False
         self._backup_full_original = None
         self._backup_full_enhanced = None
 
-    # ---------- 基础显示 ----------
+    # ---------- Basic display ----------
     def _set_image_on_label(self, label: QLabel, arr: np.ndarray):
         w, h = label.width(), label.height()
         label.setPixmap(arr_to_qpixmap_letterbox(arr, w, h))
 
-    # ---------- 坐标映射（label → 图像） ----------
+    # ---------- Map label coordinates to image coordinates ----------
     def _label_rect_to_image_rect(self, label: QLabel, img: np.ndarray, rect: QRect):
         box_w, box_h = label.width(), label.height()
         img_h, img_w = img.shape[:2]
@@ -232,7 +232,7 @@ class DetailEnhancementApp(QWidget):
         self._set_image_on_label(self.lblOriginalImage, crop_o)
         self._set_image_on_label(self.lblEnhancedImage, crop_e)
 
-    # ---------- 放大按钮 ----------
+    # ---------- Zoom controls ----------
     def startZoom(self):
         if self.originalImage is None or self.enhancedImage is None:
             QMessageBox.information(self, "提示", "请先载入图像"); return
@@ -260,7 +260,7 @@ class DetailEnhancementApp(QWidget):
         if roi is None: return
         self._apply_zoom_with_roi(roi)
 
-    # ---------- 加载 / 保存 / 指标 / 高频层 ----------
+    # ---------- Load, save, metrics, and high-frequency residual ----------
     def loadImage(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择图像", "", "图像文件 (*.jpg *.png *.bmp *.tif)")
         if not path: return
@@ -275,7 +275,7 @@ class DetailEnhancementApp(QWidget):
             bgr = cv2.imread(path); assert bgr is not None, 'OpenCV 无法读取该图像'
             img_rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-            # 兼容 run_*_app 的接口：返回 eval_sr, dbg
+            # Match the run_*_app interface, which returns eval_sr and dbg.
             eval_sr, dbg = self.enhance_fn(img_rgb, progress, return_debug=True)
 
             self.originalImage = dbg["for_original_window"]
@@ -321,7 +321,7 @@ class DetailEnhancementApp(QWidget):
             QMessageBox.warning(self, "提示", "请先载入图像"); return
         self._set_image_on_label(self.lblResidualImage, self.residualImage)
 
-    # ---------- 自适应重绘 ----------
+    # ---------- Responsive redraw ----------
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if self.originalImage is not None:
@@ -331,7 +331,7 @@ class DetailEnhancementApp(QWidget):
         if self.residualImage is not None:
             self._set_image_on_label(self.lblResidualImage, self.residualImage)
 
-# ---------- 入口 ----------
+# ---------- Entry point ----------
 def run_app(enhance_fn):
     app = QApplication(sys.argv); app.setFont(QFont("Microsoft YaHei", 11))
     win = DetailEnhancementApp(enhance_fn); win.show()
